@@ -1,0 +1,105 @@
+name: Release Desktop
+
+# 打 tag 时触发，格式: v0.1.0
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:  # 也支持手动触发
+
+permissions:
+  contents: write  # 创建 Release 和上传附件需要
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+            rust_target: aarch64-apple-darwin
+
+          # macOS Intel
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+            rust_target: x86_64-apple-darwin
+
+          # Windows x64
+          - platform: windows-latest
+            args: '--target x86_64-pc-windows-msvc'
+            rust_target: ''
+
+          # Linux x64
+          - platform: ubuntu-22.04
+            args: ''
+            rust_target: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Rust ──
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      # ── Rust cache ──
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # ── Linux 系统依赖 ──
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
+      # ── Node.js ──
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── 安装前端依赖 ──
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── 构建并发布 ──
+      - name: Build & Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Jarvis Space ${{ github.ref_name }}'
+          releaseBody: |
+            ## Jarvis Space 桌面端
+
+            ### 下载
+
+            | 平台 | 文件 |
+            |------|------|
+            | macOS (Apple Silicon) | `*_aarch64.dmg` |
+            | macOS (Intel) | `*_x64.dmg` |
+            | Windows (x64) | `*_x64-setup.exe` |
+            | Linux | `*.AppImage` |
+
+            ### 安装说明
+            - **macOS**: 下载 `.dmg`，拖拽到应用程序文件夹（首次打开右键→打开绕过门卫）
+            - **Windows**: 下载 `.exe`，直接运行安装程序
+            - **Linux**: 下载 `.AppImage`，`chmod +x *.AppImage` 后执行
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
