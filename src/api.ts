@@ -1,8 +1,17 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 
-// Default to localhost:3100 (Space Web dev server)
-// Users can change via Settings or localStorage
-const API_BASE = localStorage.getItem('jarvis_api_base') || 'http://localhost:3100';
+// ─── Server presets ───
+export const SERVER_PRESETS = [
+  { key: 'lan',    label: '局域网', url: 'http://192.168.1.55' },
+  { key: 'wan',    label: '外  网', url: 'http://jarvis.utum.cn' },
+  { key: 'custom', label: '自定义', url: '' },
+] as const;
+
+export type ServerPresetKey = typeof SERVER_PRESETS[number]['key'];
+
+function getApiBase(): string {
+  return localStorage.getItem('jarvis_api_base') || 'http://localhost:3100';
+}
 
 interface ApiOptions {
   method?: string;
@@ -40,7 +49,7 @@ class ApiClient {
   }
 
   getBaseUrl(): string {
-    return API_BASE;
+    return getApiBase();
   }
 
   setBaseUrl(url: string) {
@@ -50,7 +59,7 @@ class ApiClient {
 
   async request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     const { method = 'GET', body, headers = {} } = options;
-    const url = `${API_BASE}${path}`;
+    const url = `${getApiBase()}${path}`;
     const fetchHeaders: Record<string, string> = {
       ...headers,
     };
@@ -105,7 +114,7 @@ class ApiClient {
 
   /** Build SSO URL for opening web version in browser (auto-login) */
   getSsoUrl(redirect = '/spaces'): string {
-    return `${API_BASE}/api/auth/sso?token=${encodeURIComponent(this.token || '')}&redirect=${encodeURIComponent(redirect)}`;
+    return `${getApiBase()}/api/auth/sso?token=${encodeURIComponent(this.token || '')}&redirect=${encodeURIComponent(redirect)}`;
   }
 
   async me() {
@@ -148,7 +157,7 @@ class ApiClient {
   }
 
   async downloadFile(spaceId: string, materialId: number): Promise<ArrayBuffer> {
-    const url = `${API_BASE}/api/spaces/${spaceId}/materials/${materialId}/download`;
+    const url = `${getApiBase()}/api/spaces/${spaceId}/materials/${materialId}/download`;
     const res = await tauriFetch(url, {
       headers: this.token ? { Authorization: `Bearer ${this.token}` } : {},
     });

@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   Box, Typography, TextField, Button,
-  Stack, Alert, CircularProgress, InputAdornment, Link
+  Stack, Alert, CircularProgress, InputAdornment,
+  Chip, Collapse,
 } from '@mui/material';
 import PhoneAndroidIcon from '@mui/icons-material/PhoneAndroid';
 import LockIcon from '@mui/icons-material/Lock';
-import { api } from '../api';
+import { api, SERVER_PRESETS } from '../api';
 
 interface LoginProps {
   onLogin: () => void;
@@ -18,8 +19,42 @@ export default function Login({ onLogin }: LoginProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(0);
-  const [showServerInput, setShowServerInput] = useState(false);
-  const [serverUrl, setServerUrl] = useState(api.getBaseUrl());
+
+  // ─── Server switcher ───
+  const detectPreset = useCallback(() => {
+    const base = api.getBaseUrl();
+    const found = SERVER_PRESETS.find(p => p.key !== 'custom' && p.url && base.startsWith(p.url));
+    return found ? found.key : 'custom';
+  }, []);
+
+  const [activePreset, setActivePreset] = useState<string>(detectPreset);
+  const [customUrl, setCustomUrl] = useState(
+    detectPreset() === 'custom' ? api.getBaseUrl() : ''
+  );
+  const [showCustomInput, setShowCustomInput] = useState(detectPreset() === 'custom');
+
+  const switchPreset = (key: string) => {
+    setActivePreset(key);
+    if (key === 'custom') {
+      setShowCustomInput(true);
+      return;
+    }
+    setShowCustomInput(false);
+    const preset = SERVER_PRESETS.find(p => p.key === key);
+    if (preset && preset.url) {
+      localStorage.setItem('jarvis_api_base', preset.url);
+      // Reset login state when switching server
+      setStep('phone'); setPhone(''); setCode(''); setError('');
+    }
+  };
+
+  const applyCustomUrl = () => {
+    const url = customUrl.replace(/\/$/, '');
+    if (url) {
+      localStorage.setItem('jarvis_api_base', url);
+      setStep('phone'); setPhone(''); setCode(''); setError('');
+    }
+  };
 
   const sendCode = async () => {
     if (!phone || phone.length !== 11) {
@@ -65,10 +100,10 @@ export default function Login({ onLogin }: LoginProps) {
   };
 
   const handleServerChange = () => {
-    if (serverUrl && serverUrl !== api.getBaseUrl()) {
-      api.setBaseUrl(serverUrl.replace(/\/$/, ''));
+    if (customUrl) {
+      applyCustomUrl();
     }
-    setShowServerInput(false);
+    setShowCustomInput(false);
   };
 
   return (
@@ -255,42 +290,68 @@ export default function Login({ onLogin }: LoginProps) {
             )}
           </Stack>
 
-          {/* Server config */}
-          <Box sx={{ mt: 4, textAlign: 'center' }}>
-            {showServerInput ? (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <TextField
+          {/* ─── Server switcher ─── */}
+          <Box sx={{ mt: 4 }}>
+            <Typography sx={{ fontSize: 10, color: 'rgba(60,60,67,0.35)', textAlign: 'center', mb: 1, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              服务器
+            </Typography>
+
+            {/* Preset chips */}
+            <Stack direction="row" spacing={0.75} justifyContent="center">
+              {SERVER_PRESETS.map(preset => (
+                <Chip
+                  key={preset.key}
+                  label={preset.label}
                   size="small"
-                  fullWidth
-                  value={serverUrl}
-                  onChange={e => setServerUrl(e.target.value)}
-                  placeholder="http://localhost:3100"
+                  clickable
+                  onClick={() => switchPreset(preset.key)}
+                  sx={{
+                    height: 26, fontSize: 12, fontWeight: activePreset === preset.key ? 600 : 400,
+                    bgcolor: activePreset === preset.key ? '#E8451C' : 'rgba(60,60,67,0.06)',
+                    color: activePreset === preset.key ? '#fff' : '#6B7280',
+                    border: '1px solid',
+                    borderColor: activePreset === preset.key ? '#E8451C' : 'transparent',
+                    '& .MuiChip-label': { px: 1.25 },
+                    '&:hover': {
+                      bgcolor: activePreset === preset.key ? '#D63A15' : 'rgba(232,69,28,0.08)',
+                    },
+                    transition: 'all 0.15s',
+                  }}
+                />
+              ))}
+            </Stack>
+
+            {/* Current server URL label */}
+            {activePreset !== 'custom' && (
+              <Typography sx={{ mt: 0.75, fontSize: 10, color: 'rgba(60,60,67,0.3)', textAlign: 'center' }}>
+                {SERVER_PRESETS.find(p => p.key === activePreset)?.url || api.getBaseUrl()}
+              </Typography>
+            )}
+
+            {/* Custom URL input - collapses in/out */}
+            <Collapse in={showCustomInput} timeout={200}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1 }}>
+                <TextField
+                  size="small" fullWidth
+                  value={customUrl}
+                  onChange={e => setCustomUrl(e.target.value)}
+                  placeholder="http://192.168.x.x 或域名"
                   onKeyDown={e => e.key === 'Enter' && handleServerChange()}
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      bgcolor: '#FFFFFF',
-                      borderRadius: 1.5,
-                      fontSize: 12,
+                      bgcolor: '#FFFFFF', borderRadius: 1.5, fontSize: 12,
                       '& fieldset': { borderColor: 'rgba(60,60,67,0.15)' },
+                      '&.Mui-focused fieldset': { borderColor: '#E8451C' },
                     },
-                    '& .MuiInputBase-input': { py: 0.8, color: '#000' },
+                    '& .MuiInputBase-input': { py: 0.7, color: '#000' },
                   }}
                 />
                 <Button size="small" onClick={handleServerChange}
-                  sx={{ color: '#E8451C', fontSize: 12, whiteSpace: 'nowrap' }}>
+                  sx={{ color: '#E8451C', fontSize: 12, whiteSpace: 'nowrap', minWidth: 'auto' }}>
                   确定
                 </Button>
               </Stack>
-            ) : (
-              <Link
-                component="button"
-                underline="hover"
-                onClick={() => setShowServerInput(true)}
-                sx={{ fontSize: 11, color: 'rgba(60,60,67,0.3)' }}
-              >
-                服务器: {api.getBaseUrl()}
-              </Link>
-            )}
+            </Collapse>
           </Box>
         </Box>
       </Box>
